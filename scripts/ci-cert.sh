@@ -12,16 +12,23 @@ KPASS="ci-temp-pass"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
+# macOS /usr/bin/openssl is LibreSSL (no -addext / no pkcs12 -legacy).
+# Prefer Homebrew OpenSSL 3 when present (GitHub runners ship it).
+OPENSSL="openssl"
+BREW_SSL="$(brew --prefix openssl@3 2>/dev/null || true)/bin/openssl"
+[ -x "$BREW_SSL" ] && OPENSSL="$BREW_SSL"
+echo "→ using $($OPENSSL version)"
+
 echo "→ generating self-signed codesigning cert '$CERT_NAME'"
-openssl req -x509 -newkey rsa:2048 \
+"$OPENSSL" req -x509 -newkey rsa:2048 \
   -keyout "$TMP/key.pem" -out "$TMP/cert.pem" \
   -days 825 -nodes -subj "/CN=$CERT_NAME/O=TablePlusPlus/" \
   -addext "basicConstraints=CA:FALSE" \
   -addext "keyUsage=critical,digitalSignature" \
-  -addext "extendedKeyUsage=critical,codeSigning" >/dev/null 2>&1
-openssl pkcs12 -export -legacy \
+  -addext "extendedKeyUsage=critical,codeSigning"
+"$OPENSSL" pkcs12 -export -legacy \
   -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-  -out "$TMP/c.p12" -name "$CERT_NAME" -passout "pass:$KPASS" >/dev/null 2>&1
+  -out "$TMP/c.p12" -name "$CERT_NAME" -passout "pass:$KPASS"
 
 echo "→ importing into CI keychain"
 security delete-keychain "$KEYCHAIN" 2>/dev/null || true
